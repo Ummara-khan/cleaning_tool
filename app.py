@@ -177,6 +177,8 @@ def stringify_unhashables(df):
     return df
 
 
+import pandas as pd
+import json
 
 def normalize_nested_json(data):
     """
@@ -206,6 +208,9 @@ def normalize_nested_json(data):
     return df
 
 
+import pandas as pd
+import numpy as np
+from dateutil import parser
 
 def normalize_items_json(data):
     """
@@ -404,13 +409,12 @@ def safe_display(df):
     df_display = df.copy()
     
     for col in df_display.columns:
-        df_display[col] = df_display[col].apply(lambda x: (
-            json.dumps(x) if isinstance(x, (list, dict, np.ndarray)) else  # convert list/dict/array to JSON string
-            "" if pd.isna(x) else  # replace NaN with empty string
-            str(x)  # convert other types to string
-        ))
+        df_display[col] = df_display[col].apply(
+            lambda x: str(x) if not pd.isna(x) else ""
+        )
     
     st.dataframe(df_display)
+
 
 def export_downloads(df):
     export_df = df.copy()
