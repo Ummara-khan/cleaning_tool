@@ -150,22 +150,31 @@ def standardize_dates(df):
         df[col] = pd.to_datetime(df[col], errors="coerce").dt.strftime("%Y-%m-%d")
     return df
 
+import numpy as np
+import pandas as pd
+
 def correct_dtypes(df):
     for col in df.columns:
         col_lower = col.lower()
-        # ID columns to string
+        # ID columns → string
         if "id" in col_lower:
             df[col] = df[col].astype(str)
         # Numeric columns
         elif any(k in col_lower for k in ["salary", "age", "weight", "gsm"]):
             df[col] = pd.to_numeric(df[col], errors="coerce")
-        # Dates handled elsewhere
-        # Boolean columns
-        elif df[col].dtype == object and set(df[col].dropna().unique()) <= {True, False, "True", "False", "true", "false"}:
-            df[col] = df[col].replace({"true": True, "false": False, "True": True, "False": False})
-        # Leave other object columns as string
+        # Boolean-like columns
         elif df[col].dtype == object:
-            df[col] = df[col].astype(str)
+            # Safely collect hashable values
+            unique_vals = set()
+            for x in df[col].dropna():
+                if isinstance(x, (str, int, float, bool)):
+                    unique_vals.add(x)
+            # Check if all values are boolean-like
+            if unique_vals <= {True, False, "True", "False", "true", "false"}:
+                df[col] = df[col].map(lambda x: 
+                                      True if str(x).lower() == "true" 
+                                      else False if str(x).lower() == "false" 
+                                      else np.nan)
     return df
 
 
@@ -177,8 +186,6 @@ def stringify_unhashables(df):
     return df
 
 
-import pandas as pd
-import json
 
 def normalize_nested_json(data):
     """
@@ -208,9 +215,6 @@ def normalize_nested_json(data):
     return df
 
 
-import pandas as pd
-import numpy as np
-from dateutil import parser
 
 def normalize_items_json(data):
     """
@@ -332,6 +336,55 @@ def auto_clean(df):
     df = correct_dtypes(df)
     return df
 
+import pandas as pd
+import numpy as np
+import json
+from pandas import json_normalize
+
+def flatten_nested_json_safe(data, sep="_"):
+    """
+    Flatten nested JSON dynamically without exploding lists.
+    Converts lists and dicts to JSON strings to prevent unhashable type errors.
+    """
+    # Wrap single dict in list
+    if isinstance(data, dict):
+        data = [data]
+
+    def recursive_flatten(row, parent_key=""):
+        items = {}
+        if isinstance(row, dict):
+            for k, v in row.items():
+                new_key = f"{parent_key}{sep}{k}" if parent_key else k
+                if isinstance(v, dict):
+                    items.update(recursive_flatten(v, new_key))
+                elif isinstance(v, list):
+                    # Convert list to JSON string
+                    items[new_key] = json.dumps(v)
+                else:
+                    items[new_key] = v
+        else:
+            items[parent_key] = row
+        return items
+
+    flattened_records = [recursive_flatten(r) for r in data]
+    df = pd.DataFrame(flattened_records)
+
+    # Convert numeric-like columns
+    for col in df.columns:
+        df[col] = pd.to_numeric(df[col], errors="ignore")
+
+    # Replace placeholders
+    placeholders = ["unknown", "", "none", "n/a", "na", "null", "??", "invalid_email@", "invalid-phone"]
+    for col in df.columns:
+        if df[col].dtype == object:
+            df[col] = df[col].replace(placeholders, np.nan)
+            df[col] = df[col].apply(lambda x: x.strip() if isinstance(x, str) else x)
+
+    # Standardize column names
+    df.columns = df.columns.str.strip().str.lower().str.replace(" ", "_")
+    df = df.drop_duplicates().reset_index(drop=True)
+
+    return df
 
 
 # ---------- Profiling & Export ----------
@@ -352,12 +405,13 @@ def safe_display(df):
     df_display = df.copy()
     
     for col in df_display.columns:
-        df_display[col] = df_display[col].apply(
-            lambda x: str(x) if not pd.isna(x) else ""
-        )
+        df_display[col] = df_display[col].apply(lambda x: (
+            json.dumps(x) if isinstance(x, (list, dict, np.ndarray)) else  # convert list/dict/array to JSON string
+            "" if pd.isna(x) else  # replace NaN with empty string
+            str(x)  # convert other types to string
+        ))
     
     st.dataframe(df_display)
-
 
 def export_downloads(df):
     export_df = df.copy()
