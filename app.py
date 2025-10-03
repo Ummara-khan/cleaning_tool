@@ -150,31 +150,22 @@ def standardize_dates(df):
         df[col] = pd.to_datetime(df[col], errors="coerce").dt.strftime("%Y-%m-%d")
     return df
 
-import numpy as np
-import pandas as pd
-
 def correct_dtypes(df):
     for col in df.columns:
         col_lower = col.lower()
-        # ID columns → string
+        # ID columns to string
         if "id" in col_lower:
             df[col] = df[col].astype(str)
         # Numeric columns
         elif any(k in col_lower for k in ["salary", "age", "weight", "gsm"]):
             df[col] = pd.to_numeric(df[col], errors="coerce")
-        # Boolean-like columns
+        # Dates handled elsewhere
+        # Boolean columns
+        elif df[col].dtype == object and set(df[col].dropna().unique()) <= {True, False, "True", "False", "true", "false"}:
+            df[col] = df[col].replace({"true": True, "false": False, "True": True, "False": False})
+        # Leave other object columns as string
         elif df[col].dtype == object:
-            # Safely collect hashable values
-            unique_vals = set()
-            for x in df[col].dropna():
-                if isinstance(x, (str, int, float, bool)):
-                    unique_vals.add(x)
-            # Check if all values are boolean-like
-            if unique_vals <= {True, False, "True", "False", "true", "false"}:
-                df[col] = df[col].map(lambda x: 
-                                      True if str(x).lower() == "true" 
-                                      else False if str(x).lower() == "false" 
-                                      else np.nan)
+            df[col] = df[col].astype(str)
     return df
 
 
@@ -344,12 +335,20 @@ from pandas import json_normalize
 def flatten_nested_json_safe(data, sep="_"):
     """
     Flatten nested JSON dynamically without exploding lists.
-    Converts lists and dicts to JSON strings to prevent unhashable type errors.
+    Preserves numeric fields, handles booleans, dates, and placeholders.
+    Lists are converted to JSON strings to avoid row duplication.
     """
-    # Wrap single dict in list
+    # If top-level dict with one key pointing to list, use it
     if isinstance(data, dict):
-        data = [data]
+        if any(isinstance(v, list) for v in data.values()):
+            for k, v in data.items():
+                if isinstance(v, list):
+                    data = v
+                    break
+        else:
+            data = [data]
 
+    # Recursive function to flatten dicts
     def recursive_flatten(row, parent_key=""):
         items = {}
         if isinstance(row, dict):
@@ -358,7 +357,7 @@ def flatten_nested_json_safe(data, sep="_"):
                 if isinstance(v, dict):
                     items.update(recursive_flatten(v, new_key))
                 elif isinstance(v, list):
-                    # Convert list to JSON string
+                    # Convert list to JSON string to avoid exploding
                     items[new_key] = json.dumps(v)
                 else:
                     items[new_key] = v
@@ -366,14 +365,15 @@ def flatten_nested_json_safe(data, sep="_"):
             items[parent_key] = row
         return items
 
+    # Apply recursive flattening to all rows
     flattened_records = [recursive_flatten(r) for r in data]
     df = pd.DataFrame(flattened_records)
 
-    # Convert numeric-like columns
+    # Convert numeric-like columns safely
     for col in df.columns:
         df[col] = pd.to_numeric(df[col], errors="ignore")
 
-    # Replace placeholders
+    # Replace placeholders dynamically
     placeholders = ["unknown", "", "none", "n/a", "na", "null", "??", "invalid_email@", "invalid-phone"]
     for col in df.columns:
         if df[col].dtype == object:
@@ -383,7 +383,6 @@ def flatten_nested_json_safe(data, sep="_"):
     # Standardize column names
     df.columns = df.columns.str.strip().str.lower().str.replace(" ", "_")
     df = df.drop_duplicates().reset_index(drop=True)
-
     return df
 
 
