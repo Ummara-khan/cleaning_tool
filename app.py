@@ -13,40 +13,54 @@ st.set_page_config(page_title="Universal Data Cleaning Tool", layout="wide")
 st.title("🧹 Data Cleaning Tool")
 
 # ---------- Utilities ----------
+import pandas as pd
+import streamlit as st
+from pandas import json_normalize
+
 def load_data(uploaded_file):
     """Smart loader for CSV, Excel, JSON, TXT with auto JSON normalization"""
     try:
         if uploaded_file.name.endswith(".csv"):
             return pd.read_csv(uploaded_file)
+
         elif uploaded_file.name.endswith((".xlsx", ".xls")):
             return pd.read_excel(uploaded_file)
+
         elif uploaded_file.name.endswith(".json"):
             import json
             raw = json.load(uploaded_file)
-            
+
             # Detect type of JSON and normalize accordingly
             if isinstance(raw, dict):
                 if "users" in raw:
-                    return normalize_nested_json(raw)  # Existing users JSON handler
+                    return normalize_nested_json(raw)  # Your existing handler
                 elif "items" in raw:
-                    return normalize_items_json(raw)   # New items JSON handler
+                    return normalize_items_json(raw)   # Your existing handler
                 else:
-                    # Fallback: normalize any dict
-                    return pd.json_normalize(raw)
+                    flat_data = [flatten_json(raw)]
+                    df = pd.DataFrame(flat_data)
             elif isinstance(raw, list):
-                return pd.json_normalize(raw)
+                flat_data = [flatten_json(record) for record in raw]
+                df = pd.DataFrame(flat_data)
             else:
                 st.error("Unsupported JSON structure.")
                 return None
 
+            # Remove empty rows (all NaN)
+            df.dropna(how="all", inplace=True)
+            return df
+
         elif uploaded_file.name.endswith(".txt"):
             return pd.read_csv(uploaded_file, delimiter="\t")
+
         else:
             st.error("Unsupported file format.")
             return None
+
     except Exception as e:
         st.error(f"Error loading file: {e}")
         return None
+
 
 
 # ---------- Sidebar ----------
@@ -79,6 +93,23 @@ st.markdown(
 st.sidebar.title("")
 st.sidebar.markdown("---")
 st.sidebar.header("")
+
+
+
+def flatten_json(y, parent_key='', sep='_'):
+    items = []
+    if isinstance(y, dict):
+        for k, v in y.items():
+            new_key = f"{parent_key}{sep}{k}" if parent_key else k
+            items.extend(flatten_json(v, new_key, sep=sep).items())
+    elif isinstance(y, list):
+        for i, v in enumerate(y):
+            new_key = f"{parent_key}{sep}{i}" if parent_key else str(i)
+            items.extend(flatten_json(v, new_key, sep=sep).items())
+    else:
+        items.append((parent_key, y))
+    return dict(items)
+
 
 # ---------- Flexible Cleaning Functions ----------
 def standardize_missing(df):
