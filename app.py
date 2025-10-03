@@ -521,6 +521,7 @@ if uploaded_file:
         """
         st.markdown(kpi_html, unsafe_allow_html=True)
 
+
         st.subheader("🔍 Column Profiling Report")
         profile_df = profile_data(cleaned_df)
         st.dataframe(profile_df)
@@ -529,3 +530,4 @@ if uploaded_file:
 
         st.subheader("💾 Download Cleaned Data")
         export_downloads(cleaned_df)
+
