@@ -17,6 +17,10 @@ import pandas as pd
 import streamlit as st
 from pandas import json_normalize
 
+import pandas as pd
+pd.set_option('future.no_silent_downcasting', True)
+
+
 def load_data(uploaded_file):
     """Smart loader for CSV, Excel, JSON, TXT with auto JSON normalization"""
     try:
@@ -522,5 +526,6 @@ if uploaded_file:
 
         st.subheader("💾 Download Cleaned Data")
         export_downloads(cleaned_df)
+
 
 
