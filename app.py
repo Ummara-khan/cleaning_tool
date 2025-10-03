@@ -496,26 +496,18 @@ if uploaded_file:
         # ---------- Custom KPI Boxes ----------
         st.subheader("📈 Data Health Report")
         kpi_html = f"""
-        <div style="display:flex; gap:15px; margin-bottom:15px; flex-wrap: wrap;">
-            <div style="flex:1; background:white; padding:20px; border:1px solid black; border-radius:10px; text-align:center;">
-                <div style="font-size:24px; font-weight:bold;">{cleaned_rows}</div>
-                <div style="font-size:14px;">Rows After Cleaning</div>
+        <div style="display:flex; gap:15px; margin-bottom:15px;">
+            <div style="flex:1; background-color:white; color:black; padding:20px; border:1px solid black; border-radius:10px; text-align:center;">
+                <div style="font-size:24px; font-weight:bold;">{cleaned_df.shape[0]}</div>
+                <div style="font-size:14px;">Rows</div>
             </div>
-            <div style="flex:1; background:white; padding:20px; border:1px solid black; border-radius:10px; text-align:center;">
-                <div style="font-size:24px; font-weight:bold;">{total_cols}</div>
+            <div style="flex:1; background-color:white; color:black; padding:20px; border:1px solid black; border-radius:10px; text-align:center;">
+                <div style="font-size:24px; font-weight:bold;">{cleaned_df.shape[1]}</div>
                 <div style="font-size:14px;">Columns</div>
             </div>
-            <div style="flex:1; background:white; padding:20px; border:1px solid black; border-radius:10px; text-align:center;">
-                <div style="font-size:24px; font-weight:bold;">{duplicates_removed}</div>
+            <div style="flex:1; background-color:white; color:black; padding:20px; border:1px solid black; border-radius:10px; text-align:center;">
+                <div style="font-size:24px; font-weight:bold;">{df.shape[0] - cleaned_df.shape[0]}</div>
                 <div style="font-size:14px;">Duplicates Removed</div>
-            </div>
-            <div style="flex:1; background:white; padding:20px; border:1px solid black; border-radius:10px; text-align:center;">
-                <div style="font-size:24px; font-weight:bold;">{total_nulls}</div>
-                <div style="font-size:14px;">Total Null Values</div>
-            </div>
-            <div style="flex:1; background:white; padding:20px; border:1px solid black; border-radius:10px; text-align:center;">
-                <div style="font-size:24px; font-weight:bold;">{percent_nulls}%</div>
-                <div style="font-size:14px;">Null Percentage</div>
             </div>
         </div>
         """
@@ -530,4 +522,5 @@ if uploaded_file:
 
         st.subheader("💾 Download Cleaned Data")
         export_downloads(cleaned_df)
+
 
