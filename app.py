@@ -175,19 +175,7 @@ def detect_date_columns(df, sample_size=50):
                 date_cols.append(col)
     return date_cols
 
-def standardize_dates(df):
-    date_cols = detect_date_columns(df)
-    for col in date_cols:
-        # Try parsing dates
-        parsed = pd.to_datetime(df[col], errors="coerce")
 
-        # Only apply .dt.strftime() if at least one valid date exists
-        if pd.api.types.is_datetime64_any_dtype(parsed):
-            df[col] = parsed.dt.strftime("%Y-%m-%d")
-        else:
-            # Leave column unchanged or set as empty string if all invalid
-            df[col] = df[col].astype(str)
-    return df
 
 
 def correct_dtypes(df):
@@ -345,12 +333,55 @@ def normalize_nested_json(data):
     return df
 
 
+
+import streamlit as st
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import io
+
+pd.set_option('future.no_silent_downcasting', True)  # Prevent future warning
+
+
+# ---------- Date Standardization ----------
+def standardize_dates(df):
+    date_cols = detect_date_columns(df)
+    for col in date_cols:
+        try:
+            parsed = pd.to_datetime(df[col].astype(str), errors="coerce")
+            # Apply formatting only if valid dates exist
+            if parsed.notna().sum() > 0:
+                df[col] = parsed.dt.strftime("%Y-%m-%d")
+            else:
+                df[col] = df[col].astype(str)
+        except Exception:
+            # In case of unexpected type issues, skip column
+            continue
+    return df
+
+
+# ---------- Profiling ----------
+def profile_data(df):
+    profile = []
+    for col in df.columns:
+        dtype = str(df[col].dtype)
+        missing_pct = round(df[col].isna().mean() * 100, 2)
+        col_values = df[col].apply(lambda x: str(x) if isinstance(x, (list, dict)) else x)
+        unique_vals = col_values.nunique()
+        sample_vals = col_values.dropna().unique()[:5]
+        sample_display = ", ".join(map(str, sample_vals))
+        profile.append([col, dtype, missing_pct, unique_vals, sample_display])
+    return pd.DataFrame(profile, columns=["Column", "Type", "Missing %", "Unique Values", "Sample Values"])
+
+
+# ---------- Auto Clean ----------
 def auto_clean(df):
-    # Replace placeholders but keep numeric columns like age intact
     placeholders = ["unknown", "", "none", "n/a", "na", "null", "??", "invalid_email@", "invalid-phone"]
     for col in df.columns:
         if col.lower() not in ["age", "salary"]:
             df[col] = df[col].replace(placeholders, np.nan)
+    df = df.infer_objects(copy=False)  # Fix for FutureWarning
 
     df = stringify_unhashables(df)
     df = df.drop_duplicates()
@@ -368,56 +399,34 @@ def auto_clean(df):
     df = clean_zipcode_column(df)
     df = standardize_dates(df)
 
-    # Correct dtypes safely
     df = correct_dtypes(df)
     return df
 
 
-
-# ---------- Profiling & Export ----------
-def profile_data(df):
-    profile = []
-    for col in df.columns:
-        dtype = str(df[col].dtype)
-        missing_pct = round(df[col].isna().mean() * 100, 2)
-        col_values = df[col].apply(lambda x: str(x) if isinstance(x, (list, dict)) else x)
-        unique_vals = col_values.nunique()
-        sample_vals = col_values.dropna().unique()[:5]
-        sample_display = ", ".join(map(str, sample_vals))
-        profile.append([col, dtype, missing_pct, unique_vals, sample_display])
-    return pd.DataFrame(profile, columns=["Column", "Type", "Missing %", "Unique Values", "Sample Values"])
-
-
+# ---------- Safe Display ----------
 def safe_display(df):
     df_display = df.copy()
-    
     for col in df_display.columns:
-        df_display[col] = df_display[col].apply(
-            lambda x: str(x) if not pd.isna(x) else ""
-        )
-    
+        df_display[col] = df_display[col].apply(lambda x: str(x) if not pd.isna(x) else "")
     st.dataframe(df_display)
 
 
+# ---------- Export ----------
 def export_downloads(df):
     export_df = df.copy()
 
-    # Convert all object columns to string (optional)
     for col in export_df.columns:
         if export_df[col].dtype == "object":
             export_df[col] = export_df[col].astype(str)
 
-    # Make all datetime columns timezone-naive for Excel
     for col in export_df.select_dtypes(include=["datetime64[ns, UTC]", "datetimetz"]).columns:
         export_df[col] = export_df[col].dt.tz_localize(None)
 
-    # CSV download
     buffer_csv = io.BytesIO()
     export_df.to_csv(buffer_csv, index=False)
-    st.download_button("⬇️ Download CSV", buffer_csv.getvalue(), 
+    st.download_button("⬇️ Download CSV", buffer_csv.getvalue(),
                        file_name="cleaned_data.csv", mime="text/csv")
 
-    # Excel download
     buffer_excel = io.BytesIO()
     with pd.ExcelWriter(buffer_excel, engine="xlsxwriter") as writer:
         export_df.to_excel(writer, index=False)
@@ -425,10 +434,9 @@ def export_downloads(df):
                        file_name="cleaned_data.xlsx",
                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-    # JSON download
     buffer_json = io.BytesIO()
     buffer_json.write(export_df.to_json(orient="records").encode())
-    st.download_button("⬇️ Download JSON", buffer_json.getvalue(), 
+    st.download_button("⬇️ Download JSON", buffer_json.getvalue(),
                        file_name="cleaned_data.json", mime="application/json")
 
 
@@ -437,9 +445,11 @@ def show_dashboard_charts(df):
     st.subheader("📊 Data Profiling Dashboard (3×3)")
     numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
     cat_cols = df.select_dtypes(exclude=[np.number]).columns.tolist()
+
     fig, axes = plt.subplots(3, 3, figsize=(18, 15))
     axes = axes.flatten()
     plots_done = 0
+
     if len(numeric_cols) > 0:
         sns.histplot(df[numeric_cols[0]].dropna(), kde=True, ax=axes[plots_done])
         axes[plots_done].set_title(f"Distribution: {numeric_cols[0]}")
@@ -474,15 +484,19 @@ def show_dashboard_charts(df):
         df.groupby(cat_cols[0])[numeric_cols[0]].mean().nlargest(10).plot(kind="bar", ax=axes[plots_done])
         axes[plots_done].set_title(f"Mean {numeric_cols[0]} by {cat_cols[0]}")
         plots_done += 1
+
     sns.heatmap(df.isnull(), cbar=False, ax=axes[plots_done])
     axes[plots_done].set_title("Missing Values Heatmap")
     plots_done += 1
+
     for i in range(plots_done, 9):
         axes[i].axis("off")
+
     plt.tight_layout()
     st.pyplot(fig)
 
-# ---------- Main App ----------
+
+# ---------- Main Streamlit Section ----------
 uploaded_file = st.file_uploader("📂 Upload your data file (CSV, Excel, JSON, TXT)",
                                  type=["csv", "xlsx", "xls", "json", "txt"])
 
@@ -492,16 +506,23 @@ if uploaded_file:
         st.subheader("📊 Raw Data Preview")
         safe_display(df.head())
 
-
         st.subheader("🧹 Cleaned Data")
-        cleaned_df = auto_clean(df)
+
+        try:
+            cleaned_df = auto_clean(df)
+        except Exception as e:
+            st.error(f"❌ Error while cleaning data: {e}")
+            st.stop()
+
         st.dataframe(cleaned_df.head())
+
         total_rows = df.shape[0]
         cleaned_rows = cleaned_df.shape[0]
         total_cols = cleaned_df.shape[1]
         duplicates_removed = total_rows - cleaned_rows
         total_nulls = cleaned_df.isnull().sum().sum()
         percent_nulls = round((total_nulls / (cleaned_rows * total_cols)) * 100, 2) if cleaned_rows > 0 else 0
+
         # ---------- Custom KPI Boxes ----------
         st.subheader("📈 Data Health Report")
         kpi_html = f"""
@@ -515,13 +536,12 @@ if uploaded_file:
                 <div style="font-size:14px;">Columns</div>
             </div>
             <div style="flex:1; background-color:white; color:black; padding:20px; border:1px solid black; border-radius:10px; text-align:center;">
-                <div style="font-size:24px; font-weight:bold;">{df.shape[0] - cleaned_df.shape[0]}</div>
+                <div style="font-size:24px; font-weight:bold;">{duplicates_removed}</div>
                 <div style="font-size:14px;">Duplicates Removed</div>
             </div>
         </div>
         """
         st.markdown(kpi_html, unsafe_allow_html=True)
-
 
         st.subheader("🔍 Column Profiling Report")
         profile_df = profile_data(cleaned_df)
@@ -531,4 +551,3 @@ if uploaded_file:
 
         st.subheader("💾 Download Cleaned Data")
         export_downloads(cleaned_df)
-
