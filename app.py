@@ -17,10 +17,6 @@ import pandas as pd
 import streamlit as st
 from pandas import json_normalize
 
-import pandas as pd
-pd.set_option('future.no_silent_downcasting', True)
-
-
 def load_data(uploaded_file):
     """Smart loader for CSV, Excel, JSON, TXT with auto JSON normalization"""
     try:
@@ -182,8 +178,17 @@ def detect_date_columns(df, sample_size=50):
 def standardize_dates(df):
     date_cols = detect_date_columns(df)
     for col in date_cols:
-        df[col] = pd.to_datetime(df[col], errors="coerce").dt.strftime("%Y-%m-%d")
+        # Try parsing dates
+        parsed = pd.to_datetime(df[col], errors="coerce")
+
+        # Only apply .dt.strftime() if at least one valid date exists
+        if pd.api.types.is_datetime64_any_dtype(parsed):
+            df[col] = parsed.dt.strftime("%Y-%m-%d")
+        else:
+            # Leave column unchanged or set as empty string if all invalid
+            df[col] = df[col].astype(str)
     return df
+
 
 def correct_dtypes(df):
     for col in df.columns:
@@ -526,6 +531,4 @@ if uploaded_file:
 
         st.subheader("💾 Download Cleaned Data")
         export_downloads(cleaned_df)
-
-
 
