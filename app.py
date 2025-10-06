@@ -17,41 +17,73 @@ import pandas as pd
 import streamlit as st
 from pandas import json_normalize
 
-def load_data(uploaded_file):
-    """Smart loader for CSV, Excel, JSON, TXT with auto JSON normalization"""
-    try:
-        if uploaded_file.name.endswith(".csv"):
-            return pd.read_csv(uploaded_file)
+import pandas as pd
+import streamlit as st
+import json
+import io
 
-        elif uploaded_file.name.endswith((".xlsx", ".xls")):
+def load_data(uploaded_file):
+    """Smart loader for CSV, Excel, JSON, TXT with auto delimiter and error handling"""
+    try:
+        filename = uploaded_file.name.lower()
+
+        # ---- CSV FILES ----
+        if filename.endswith(".csv"):
+            try:
+                # Try standard read first
+                return pd.read_csv(uploaded_file)
+            except Exception:
+                # Reset file pointer
+                uploaded_file.seek(0)
+
+                # Detect delimiter automatically
+                sample = uploaded_file.read(4096).decode(errors="ignore")
+                uploaded_file.seek(0)
+                import csv
+                dialect = csv.Sniffer().sniff(sample)
+                delimiter = dialect.delimiter
+
+                # Re-read with detected delimiter and flexible parsing
+                return pd.read_csv(
+                    uploaded_file,
+                    delimiter=delimiter,
+                    engine="python",
+                    on_bad_lines="skip"  # skip bad rows instead of crashing
+                )
+
+        # ---- EXCEL FILES ----
+        elif filename.endswith((".xlsx", ".xls")):
             return pd.read_excel(uploaded_file)
 
-        elif uploaded_file.name.endswith(".json"):
-            import json
+        # ---- JSON FILES ----
+        elif filename.endswith(".json"):
             raw = json.load(uploaded_file)
 
-            # Detect type of JSON and normalize accordingly
+            # Detect structure type
             if isinstance(raw, dict):
                 if "users" in raw:
-                    return normalize_nested_json(raw)  # Your existing handler
+                    return normalize_nested_json(raw)
                 elif "items" in raw:
-                    return normalize_items_json(raw)   # Your existing handler
+                    return normalize_items_json(raw)
                 else:
-                    flat_data = [flatten_json(raw)]
-                    df = pd.DataFrame(flat_data)
+                    df = pd.DataFrame([flatten_json(raw)])
             elif isinstance(raw, list):
-                flat_data = [flatten_json(record) for record in raw]
-                df = pd.DataFrame(flat_data)
+                df = pd.DataFrame([flatten_json(record) for record in raw])
             else:
                 st.error("Unsupported JSON structure.")
                 return None
 
-            # Remove empty rows (all NaN)
             df.dropna(how="all", inplace=True)
             return df
 
-        elif uploaded_file.name.endswith(".txt"):
-            return pd.read_csv(uploaded_file, delimiter="\t")
+        # ---- TEXT FILES ----
+        elif filename.endswith(".txt"):
+            # Try tab, comma, or semicolon automatically
+            try:
+                return pd.read_csv(uploaded_file, sep=None, engine="python", on_bad_lines="skip")
+            except Exception:
+                uploaded_file.seek(0)
+                return pd.read_csv(uploaded_file, delimiter="\t", engine="python", on_bad_lines="skip")
 
         else:
             st.error("Unsupported file format.")
